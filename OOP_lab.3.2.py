@@ -116,7 +116,7 @@ class App:
             e.bind("<Return>", lambda ev, k=key: self._send_to_model(k, ev.widget.get()))
             self.widgets[key]['ent'] = e
 
-            # 2. Спинбокс (Spinbox) - Сюда теперь тоже нельзя вводить буквы
+            # 2. Спинбокс (Spinbox)
             s = tk.Spinbox(self.root, from_=0, to=100, justify='center',
                            validate="key", validatecommand=self.vcmd,
                            command=lambda k=key: self._send_to_model(k, self.widgets[k]['spn'].get()))
