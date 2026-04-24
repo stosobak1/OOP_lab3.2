@@ -1,22 +1,31 @@
+
 import tkinter as tk
 
 # ===== МОДЕЛЬ =====
 class Model:
     def __init__(self):
-        self.a = 10
-        self.b = 50
-        self.c = 90
+        self._a = 10
+        self._b = 50
+        self._c = 90
 
     def set_values(self, a, b, c):
-        self.a = a
-        self.b = b
-        self.c = c
+        # Ограничения A <= B <= C
+        if a > b:
+            b = a
+        if b > c:
+            c = b
+        if b < a:
+            a = b
+
+        self._a = max(0, min(100, a))
+        self._b = max(0, min(100, b))
+        self._c = max(0, min(100, c))
 
     def get_values(self):
-        return self.a, self.b, self.c
+        return self._a, self._b, self._c
 
 
-# ===== ПРИЛОЖЕНИЕ =====
+# ===== VIEW + CONTROLLER =====
 class App:
     def __init__(self, root):
         self.root = root
@@ -25,9 +34,11 @@ class App:
         self.model = Model()
 
         # ===== ПОДПИСИ =====
-        tk.Label(root, text="A").grid(row=0, column=0)
-        tk.Label(root, text="B").grid(row=0, column=1)
-        tk.Label(root, text="C").grid(row=0, column=2)
+        tk.Label(root, text="A", font=("Arial", 16)).grid(row=0, column=0)
+        tk.Label(root, text="<=", font=("Arial", 16)).grid(row=0, column=1)
+        tk.Label(root, text="B", font=("Arial", 16)).grid(row=0, column=2)
+        tk.Label(root, text="<=", font=("Arial", 16)).grid(row=0, column=3)
+        tk.Label(root, text="C", font=("Arial", 16)).grid(row=0, column=4)
 
         # ===== ENTRY =====
         self.entry_a = tk.Entry(root, width=10)
@@ -35,8 +46,8 @@ class App:
         self.entry_c = tk.Entry(root, width=10)
 
         self.entry_a.grid(row=1, column=0)
-        self.entry_b.grid(row=1, column=1)
-        self.entry_c.grid(row=1, column=2)
+        self.entry_b.grid(row=1, column=2)
+        self.entry_c.grid(row=1, column=4)
 
         # ===== SPINBOX =====
         self.spin_a = tk.Spinbox(root, from_=0, to=100, width=8)
@@ -44,8 +55,8 @@ class App:
         self.spin_c = tk.Spinbox(root, from_=0, to=100, width=8)
 
         self.spin_a.grid(row=2, column=0)
-        self.spin_b.grid(row=2, column=1)
-        self.spin_c.grid(row=2, column=2)
+        self.spin_b.grid(row=2, column=2)
+        self.spin_c.grid(row=2, column=4)
 
         # ===== SCALE =====
         self.scale_a = tk.Scale(root, from_=0, to=100, orient="horizontal")
@@ -53,8 +64,8 @@ class App:
         self.scale_c = tk.Scale(root, from_=0, to=100, orient="horizontal")
 
         self.scale_a.grid(row=3, column=0)
-        self.scale_b.grid(row=3, column=1)
-        self.scale_c.grid(row=3, column=2)
+        self.scale_b.grid(row=3, column=2)
+        self.scale_c.grid(row=3, column=4)
 
         # ===== СОБЫТИЯ =====
         self.entry_a.bind("<KeyRelease>", self.update_from_entry)
@@ -69,7 +80,6 @@ class App:
         self.scale_b.config(command=self.update_from_scale)
         self.scale_c.config(command=self.update_from_scale)
 
-        # начальное обновление
         self.update_view()
 
     # ===== ОБНОВЛЕНИЕ ИЗ ENTRY =====
@@ -78,6 +88,7 @@ class App:
             a = int(self.entry_a.get())
             b = int(self.entry_b.get())
             c = int(self.entry_c.get())
+
             self.model.set_values(a, b, c)
             self.update_view()
         except:
@@ -89,6 +100,7 @@ class App:
             a = int(self.spin_a.get())
             b = int(self.spin_b.get())
             c = int(self.spin_c.get())
+
             self.model.set_values(a, b, c)
             self.update_view()
         except:
@@ -99,6 +111,7 @@ class App:
         a = self.scale_a.get()
         b = self.scale_b.get()
         c = self.scale_c.get()
+
         self.model.set_values(a, b, c)
         self.update_view()
 
@@ -107,29 +120,28 @@ class App:
         a, b, c = self.model.get_values()
 
         # Entry
-        self.entry_a.delete(0, tk.END)
-        self.entry_a.insert(0, str(a))
-
-        self.entry_b.delete(0, tk.END)
-        self.entry_b.insert(0, str(b))
-
-        self.entry_c.delete(0, tk.END)
-        self.entry_c.insert(0, str(c))
+        self._set_entry(self.entry_a, a)
+        self._set_entry(self.entry_b, b)
+        self._set_entry(self.entry_c, c)
 
         # Spinbox
-        self.spin_a.delete(0, tk.END)
-        self.spin_a.insert(0, str(a))
-
-        self.spin_b.delete(0, tk.END)
-        self.spin_b.insert(0, str(b))
-
-        self.spin_c.delete(0, tk.END)
-        self.spin_c.insert(0, str(c))
+        self._set_spin(self.spin_a, a)
+        self._set_spin(self.spin_b, b)
+        self._set_spin(self.spin_c, c)
 
         # Scale
         self.scale_a.set(a)
         self.scale_b.set(b)
         self.scale_c.set(c)
+
+    # ===== ВСПОМОГАТЕЛЬНЫЕ =====
+    def _set_entry(self, entry, value):
+        entry.delete(0, tk.END)
+        entry.insert(0, str(value))
+
+    def _set_spin(self, spin, value):
+        spin.delete(0, tk.END)
+        spin.insert(0, str(value))
 
 
 # ===== ЗАПУСК =====
