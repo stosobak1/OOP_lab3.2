@@ -2,182 +2,164 @@ import tkinter as tk
 import json
 import os
 
-# ===== МОДЕЛЬ =====
-class Model:
+# ===== МОДЕЛЬ (Model) =====
+class NumbersModel:
     def __init__(self):
-        self._a = 10
+        self._a = 0
         self._b = 50
-        self._c = 90
+        self._c = 100
         self._observers = []
-
+        self._filename = "data.json"
         self.load()
 
-    # ===== ПОДПИСКА =====
-    def subscribe(self, callback):
-        self._observers.append(callback)
+    def add_observer(self, observer):
+        self._observers.append(observer)
+        self.notify_observers()
 
-    def notify(self):
-        for callback in self._observers:
-            callback()
+    def notify_observers(self):
+        # Атомарное уведомление всех подписчиков
+        for observer in self._observers:
+            observer(self._a, self._b, self._c)
 
-    # ===== ЛОГИКА =====
-    def set_values(self, a, b, c):
-        old = (self._a, self._b, self._c)
+    # --- Логика изменения значений ---
 
-        # ограничения
-        if a > b:
-            b = a
-        if b > c:
-            c = b
-        if b < a:
-            a = b
+    def set_a(self, val):
+        val = self._clamp(val)
+        if val == self._a: return
+        self._a = val
+        # Разрешающее поведение: A двигает B и C вперед
+        if self._a > self._b: self._b = self._a
+        if self._b > self._c: self._c = self._b
+        self._finalize()
 
-        a = max(0, min(100, a))
-        b = max(0, min(100, b))
-        c = max(0, min(100, c))
-
-        new = (a, b, c)
-
-        # если ничего не изменилось — не уведомляем
-        if old == new:
+    def set_b(self, val):
+        val = self._clamp(val)
+        # Ограничивающее поведение: B зажат между A и C
+        new_b = max(self._a, min(self._c, val))
+        # Если значение не изменилось (попытка выйти за границы), 
+        # все равно уведомляем, чтобы UI сбросил некорректный ввод
+        if new_b == self._b:
+            self.notify_observers()
             return
+        self._b = new_b
+        self._finalize()
 
-        self._a, self._b, self._c = new
+    def set_c(self, val):
+        val = self._clamp(val)
+        if val == self._c: return
+        self._c = val
+        # Разрешающее поведение: C тянет B и A назад
+        if self._c < self._b: self._b = self._c
+        if self._b < self._a: self._a = self._b
+        self._finalize()
 
+    def _clamp(self, val):
+        return max(0, min(100, val))
+
+    def _finalize(self):
         self.save()
-        self.notify()
+        self.notify_observers()
 
-    def get_values(self):
-        return self._a, self._b, self._c
-
-    # ===== СОХРАНЕНИЕ =====
     def save(self):
-        data = {"a": self._a, "b": self._b, "c": self._c}
-        with open("data.json", "w") as f:
-            json.dump(data, f)
+        try:
+            with open(self._filename, "w") as f:
+                json.dump({"a": self._a, "b": self._b, "c": self._c}, f)
+        except: pass
 
     def load(self):
-        if os.path.exists("data.json"):
+        if os.path.exists(self._filename):
             try:
-                with open("data.json", "r") as f:
-                    data = json.load(f)
-                    self._a = data["a"]
-                    self._b = data["b"]
-                    self._c = data["c"]
-            except:
-                pass
+                with open(self._filename, "r") as f:
+                    d = json.load(f)
+                    self._a = self._clamp(d.get("a", 0))
+                    self._b = self._clamp(d.get("b", 50))
+                    self._c = self._clamp(d.get("c", 100))
+                    # Проверка правил на случай ручного редактирования JSON
+                    if self._a > self._b: self._b = self._a
+                    if self._b > self._c: self._c = self._b
+            except: pass
 
 
-# ===== VIEW =====
+# ===== ПРЕДСТАВЛЕНИЕ (View) И КОНТРОЛЛЕР (Controller) =====
 class App:
-    def __init__(self, root):
+    def __init__(self, root, model):
         self.root = root
-        self.root.title("MVC Lab")
+        self.model = model
+        self.root.title("MVC Lab 3")
+        self.root.geometry("500x300")
+        self.root.minsize(400, 250)
 
-        self.model = Model()
-        self.model.subscribe(self.update_view)
+        self._lock = False # Блокировка рекурсии при обновлении
 
-        # ===== UI =====
-        tk.Label(root, text="A", font=("Arial", 16)).grid(row=0, column=0)
-        tk.Label(root, text="<=", font=("Arial", 16)).grid(row=0, column=1)
-        tk.Label(root, text="B", font=("Arial", 16)).grid(row=0, column=2)
-        tk.Label(root, text="<=", font=("Arial", 16)).grid(row=0, column=3)
-        tk.Label(root, text="C", font=("Arial", 16)).grid(row=0, column=4)
+        # Настройка сетки для адаптивности
+        for i in range(3): self.root.columnconfigure(i, weight=1)
+        for i in range(4): self.root.rowconfigure(i, weight=1)
 
-        # ENTRY
-        self.entry_a = tk.Entry(root, width=10)
-        self.entry_b = tk.Entry(root, width=10)
-        self.entry_c = tk.Entry(root, width=10)
+        # Функция валидации: разрешает только цифры (P - новое значение поля)
+        self.vcmd = (self.root.register(lambda P: P == "" or P.isdigit()), '%P')
 
-        self.entry_a.grid(row=1, column=0)
-        self.entry_b.grid(row=1, column=2)
-        self.entry_c.grid(row=1, column=4)
+        self._init_ui()
+        self.model.add_observer(self.update_view)
 
-        # SPINBOX
-        self.spin_a = tk.Spinbox(root, from_=0, to=100, width=8)
-        self.spin_b = tk.Spinbox(root, from_=0, to=100, width=8)
-        self.spin_c = tk.Spinbox(root, from_=0, to=100, width=8)
+    def _init_ui(self):
+        self.widgets = {'a': {}, 'b': {}, 'c': {}}
+        
+        headers = ["A", "B", "C"]
+        for i, h in enumerate(headers):
+            tk.Label(self.root, text=h, font=("Arial", 12, "bold")).grid(row=0, column=i)
 
-        self.spin_a.grid(row=2, column=0)
-        self.spin_b.grid(row=2, column=2)
-        self.spin_c.grid(row=2, column=4)
+        for i, key in enumerate(['a', 'b', 'c']):
+            # 1. Текстовое поле (Entry)
+            e = tk.Entry(self.root, validate="key", validatecommand=self.vcmd, justify='center')
+            e.grid(row=1, column=i, padx=10, sticky="ew")
+            e.bind("<FocusOut>", lambda ev, k=key: self._send_to_model(k, ev.widget.get()))
+            e.bind("<Return>", lambda ev, k=key: self._send_to_model(k, ev.widget.get()))
+            self.widgets[key]['ent'] = e
 
-        # SCALE
-        self.scale_a = tk.Scale(root, from_=0, to=100, orient="horizontal")
-        self.scale_b = tk.Scale(root, from_=0, to=100, orient="horizontal")
-        self.scale_c = tk.Scale(root, from_=0, to=100, orient="horizontal")
+            # 2. Спинбокс (Spinbox) - Сюда теперь тоже нельзя вводить буквы
+            s = tk.Spinbox(self.root, from_=0, to=100, justify='center',
+                           validate="key", validatecommand=self.vcmd,
+                           command=lambda k=key: self._send_to_model(k, self.widgets[k]['spn'].get()))
+            s.grid(row=2, column=i, padx=10, sticky="ew")
+            s.bind("<FocusOut>", lambda ev, k=key: self._send_to_model(k, ev.widget.get()))
+            self.widgets[key]['spn'] = s
 
-        self.scale_a.grid(row=3, column=0)
-        self.scale_b.grid(row=3, column=2)
-        self.scale_c.grid(row=3, column=4)
+            # 3. Ползунок (Scale)
+            sc = tk.Scale(self.root, from_=0, to=100, orient="horizontal", showvalue=False,
+                          command=lambda val, k=key: self._send_to_model(k, val))
+            sc.grid(row=3, column=i, padx=10, sticky="ew")
+            self.widgets[key]['scl'] = sc
 
-        # ===== СОБЫТИЯ =====
-        self.entry_a.bind("<KeyRelease>", self.update_from_entry)
-        self.entry_b.bind("<KeyRelease>", self.update_from_entry)
-        self.entry_c.bind("<KeyRelease>", self.update_from_entry)
-
-        self.spin_a.bind("<KeyRelease>", self.update_from_spin)
-        self.spin_b.bind("<KeyRelease>", self.update_from_spin)
-        self.spin_c.bind("<KeyRelease>", self.update_from_spin)
-
-        self.scale_a.config(command=self.update_from_scale)
-        self.scale_b.config(command=self.update_from_scale)
-        self.scale_c.config(command=self.update_from_scale)
-
-        # первый рендер
-        self.update_view()
-
-    # ===== ОБНОВЛЕНИЯ =====
-    def update_from_entry(self, event):
+    def _send_to_model(self, key, value):
+        if self._lock or value == "": return
         try:
-            self.model.set_values(
-                int(self.entry_a.get()),
-                int(self.entry_b.get()),
-                int(self.entry_c.get())
-            )
-        except:
-            pass
+            val = int(value)
+            setter = getattr(self.model, f"set_{key}")
+            setter(val)
+        except ValueError:
+            self.model.notify_observers() # Откат при ошибке
 
-    def update_from_spin(self, event):
-        try:
-            self.model.set_values(
-                int(self.spin_a.get()),
-                int(self.spin_b.get()),
-                int(self.spin_c.get())
-            )
-        except:
-            pass
+    def update_view(self, a, b, c):
+        if self._lock: return
+        self._lock = True
+        
+        data = {'a': a, 'b': b, 'c': c}
+        for key, val in data.items():
+            # Обновление Entry
+            self.widgets[key]['ent'].delete(0, tk.END)
+            self.widgets[key]['ent'].insert(0, str(val))
+            
+            # Обновление Spinbox
+            self.widgets[key]['spn'].delete(0, tk.END)
+            self.widgets[key]['spn'].insert(0, str(val))
+            
+            # Обновление Scale
+            self.widgets[key]['scl'].set(val)
+            
+        self._lock = False
 
-    def update_from_scale(self, value):
-        self.model.set_values(
-            self.scale_a.get(),
-            self.scale_b.get(),
-            self.scale_c.get()
-        )
-
-    # ===== VIEW =====
-    def update_view(self):
-        a, b, c = self.model.get_values()
-
-        self._set(self.entry_a, a)
-        self._set(self.entry_b, b)
-        self._set(self.entry_c, c)
-
-        self._set(self.spin_a, a)
-        self._set(self.spin_b, b)
-        self._set(self.spin_c, c)
-
-        self.scale_a.set(a)
-        self.scale_b.set(b)
-        self.scale_c.set(c)
-
-    def _set(self, widget, value):
-        widget.delete(0, tk.END)
-        widget.insert(0, str(value))
-
-
-# ===== ЗАПУСК =====
 if __name__ == "__main__":
     root = tk.Tk()
-    app = App(root)
+    model = NumbersModel()
+    app = App(root, model)
     root.mainloop()
